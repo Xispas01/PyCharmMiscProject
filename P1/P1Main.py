@@ -1,11 +1,10 @@
 import threading
 import time
 import random
-
-visualizar = False
-
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+
+visualizar = False
 
 MAX_VALOR = 20
 MIN_VALOR = 0
@@ -86,6 +85,7 @@ def Visual(contenedor, grafica):
 if __name__ == '__main__':
     container = Contenedor()
     grafica = Grafica()
+
     hilo_generador = threading.Thread(name='Generador',target=Produce,args=(container,))
     hilo_consumidor = threading.Thread(name='Consumidor',target=Consume,args=(container,))
     hilo_visualizador = threading.Thread(name='Visualizador',target=Visual,args=(container, grafica,))
