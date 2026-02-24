@@ -1,3 +1,6 @@
+#Editores:
+# Alejandro Mancebo Arnal
+# Jose Ginemo Niza
 import threading
 import time
 import random

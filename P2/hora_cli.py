@@ -1,3 +1,7 @@
+#Editores:
+# Alejandro Mancebo Arnal
+# Jose Ginemo Niza
+
 import socket
 if __name__ == '__main__':
     # Crear un socket UDP

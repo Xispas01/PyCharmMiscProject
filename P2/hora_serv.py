@@ -1,3 +1,7 @@
+#Editores:
+# Alejandro Mancebo Arnal
+# Jose Ginemo Niza
+
 import socket
 from datetime import datetime
 

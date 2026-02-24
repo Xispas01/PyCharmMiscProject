@@ -1,3 +1,7 @@
+#Editores:
+# Alejandro Mancebo Arnal
+# Jose Ginemo Niza
+
 import socket
 import tkinter as tk
 import threading
