@@ -7,10 +7,14 @@ import random
 import threading
 import time
 
+Visualizar = True
 
+cls.deque([],10)
 class BufferFIFO():
     def __init__(self,size:int = 10):
-        self.bufferLock = threading.Condition()
+        self.bufferLock = threading.RLock()
+        self.hasSpace = threading.Condition(lock=self.bufferLock)
+        self.hasItem = threading.Condition(lock=self.bufferLock)
 
         self.count = 0
         self.size = size
@@ -21,12 +25,12 @@ class BufferFIFO():
         self.bufferLock.acquire()
 
         while self.count >= self.size:
-            self.bufferLock.wait()
+            self.hasSpace.wait()
 
         self.data.append(element)
         self.count += 1
 
-        self.bufferLock.notify_all()
+        self.hasItem.notify(1)
         self.bufferLock.release()
 
         return True
@@ -35,12 +39,12 @@ class BufferFIFO():
         self.bufferLock.acquire()
 
         while self.count <= 0:
-            self.bufferLock.wait()
+            self.hasItem.wait()
 
         element = self.data.pop(0)
         self.count -= 1
 
-        self.bufferLock.notify_all()
+        self.hasSpace.notify(1)
         self.bufferLock.release()
 
         return element
@@ -49,7 +53,7 @@ class BufferFIFO():
         self.bufferLock.acquire()
 
         while self.count <= 0:
-            self.bufferLock.wait()
+            self.hasItem.wait()
 
         if FirstIn:
             element = self.data[0]
@@ -88,34 +92,50 @@ class BufferFIFO():
 
         return v
 
-def Produce(buffer):
-    while True:
+def Produce(buffer,N,id):
+    Entries = 1
+    Objective = N + Entries
+    while Entries < Objective:
         time.sleep((random.random()+1)*2)
-        dato = random.randint(0,100)
+        dato = id + Entries
         buffer.insert(dato)
         print('Elemento con valor %3d Insertado' % (dato))
+        Entries +=1
 
-def Consume(buffer):
-    while True:
+def Consume(buffer,N,id):
+    Entries = 1
+    Objective = N + Entries
+    while Entries < Objective:
         time.sleep((random.random()+1)*2)
-        print('Elemento con valor %3d extraido' % (buffer.remove()))
+        print('Elemento con valor %3d extraido por hilo id: %3d, extraccion %2d' % (buffer.remove(),id,Entries))
+        Entries +=1
 
 def Visual(buffer):
-    while True:
+    while Visualizar:
          buffer.list()
          time.sleep(1)
 
 if __name__ == '__main__':
 
     buffer = BufferFIFO()
-    hilosConsumidoresProductores = [threading.Thread(name='Visualizador',target=Visual,args=(buffer,))]
+    hilosConsumidoresProductores = []
+    hiloVisual = threading.Thread(name='Visualizador',target=Visual,args=(buffer,))
+    N = 10
 
     for i in range(6):
-        hilosConsumidoresProductores.append(threading.Thread(name=("Generador %d" % (i)),target=Produce,args=(buffer,)))
-
+        hilosConsumidoresProductores.append(threading.Thread(name=("Generador %d" % (i)),target=Produce,args=(buffer,N,(i+1)*100,)))
     for i in range(6):
-        hilosConsumidoresProductores.append(threading.Thread(name=("Consumidor %d" % (i)),target=Consume,args=(buffer,)))
+        hilosConsumidoresProductores.append(threading.Thread(name=("Consumidor %d" % (i)),target=Consume,args=(buffer,N,(i+1)*100,)))
 
 
     for hilo in hilosConsumidoresProductores:
         hilo.start()
+    hiloVisual.start()
+
+    for hilo in hilosConsumidoresProductores:
+        hilo.join()
+    Visualizar = False
+
+    hiloVisual.join()
+
+    exit(0)
