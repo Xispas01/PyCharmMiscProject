@@ -27,14 +27,12 @@ class AplicacionUDP:
         self.cambiar_modo("Cliente")
 
     def setup_gui(self):
-        # Modo de funcionamiento (No editable)
         tk.Label(self.root, text='Modo Actual:').grid(row=0, column=0, sticky="e")
         self.var_modo = tk.StringVar(value="Cliente")
         self.entry_modo_actual = tk.Entry(self.root, textvariable=self.var_modo, state='readonly',
                                           readonlybackground="lightgrey")
         self.entry_modo_actual.grid(row=0, column=1, sticky="w")
 
-        # Configuración de Puertos (Clave para evitar conflictos)
         tk.Label(self.root, text='Mi Puerto Escucha:').grid(row=1, column=0, sticky="e")
         self.entry_puerto_local = tk.Entry(self.root)
         self.entry_puerto_local.insert(0, "10001")
@@ -50,28 +48,24 @@ class AplicacionUDP:
         self.entry_puerto_dest.insert(0, "10002")
         self.entry_puerto_dest.grid(row=2, column=3, sticky="w")
 
-        # Selector de Modo
         tk.Label(self.root, text='Cambiar a:').grid(row=3, column=0, sticky="e")
         self.selector_modo = tk.OptionMenu(self.root, self.var_modo, "Cliente", "Servidor", "Cliente/Servidor",
                                            command=self.cambiar_modo)
         self.selector_modo.grid(row=3, column=1, sticky="w")
 
-        # Entrada de texto
-        tk.Label(self.root, text='Escribir texto:').grid(row=4, column=0, sticky="e")
-        self.cuadro_texto_origen = tk.Entry(self.root, width=40)
-        self.cuadro_texto_origen.grid(row=4, column=1, columnspan=2)
-
-        # Botón Enviar
-        self.boton_enviar = tk.Button(self.root, text="Enviar / Copiar Texto", command=self.boton_click)
-        self.boton_enviar.grid(row=5, column=0, columnspan=4, pady=5)
-
-        # Cuadro de texto destino (Historial)
         self.cuadro_texto_destino = tk.Text(self.root, height=10, width=60)
-        self.cuadro_texto_destino.grid(row=6, column=0, columnspan=4, padx=5)
+        self.cuadro_texto_destino.grid(row=4, column=0, columnspan=4, padx=5, pady=5)
 
         self.scrollbar = tk.Scrollbar(self.root, command=self.cuadro_texto_destino.yview)
-        self.scrollbar.grid(row=6, column=4, sticky=tk.NS)
+        self.scrollbar.grid(row=4, column=4, sticky=tk.NS)
         self.cuadro_texto_destino.config(yscrollcommand=self.scrollbar.set)
+
+        tk.Label(self.root, text='Escribir texto:').grid(row=5, column=0, sticky="e")
+        self.cuadro_texto_origen = tk.Entry(self.root, width=40)
+        self.cuadro_texto_origen.grid(row=5, column=1, columnspan=2, sticky="w", padx=5)
+
+        self.boton_enviar = tk.Button(self.root, text="Enviar / Copiar Texto", command=self.boton_click)
+        self.boton_enviar.grid(row=5, column=3, columnspan=6, pady=10)
 
     def cambiar_modo(self, modo):
         """Cierra el socket anterior y abre uno nuevo si el modo requiere escucha."""
