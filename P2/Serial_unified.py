@@ -19,7 +19,7 @@ class AplicacionUDP:
         self.socket_escucha = None
         self.hilo_recepcion = None
         self.ejecutando = False
-        self.mensajes_recibidos = set()  # Para deduplicación (IDs únicos)
+        self.mensajes_recibidos = set()  # Para la duplicación (ID's únicos)
         self.nodos_registrados = set()  # Guardará tuplas (IP, Puerto_Escucha)
 
         self.setup_gui()
@@ -72,8 +72,9 @@ class AplicacionUDP:
         self.detener_escucha()
 
         if modo in ["Servidor", "Cliente/Servidor"]:
+            puerto = int(self.entry_puerto_local.get())
             try:
-                puerto = int(self.entry_puerto_local.get())
+                #puerto = int(self.entry_puerto_local.get())
                 self.socket_escucha = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 self.socket_escucha.bind(('', puerto))
 
@@ -168,12 +169,18 @@ if __name__ == '__main__':
     ventana = tk.Tk()
     app = AplicacionUDP(ventana)
 
-    # Control de salida forzada solicitado
+    #Control de errores
     try:
         ventana.mainloop()
+
+    # Control de salida forzada solicitado
     except KeyboardInterrupt:
         print("Terminado por orden del usuario")
+
+    # Error general
     except Exception as e:
         print("Error en el programa: \n", e)
+    #En caso de error cierra la conexión y cierra el programa.
     finally:
         app.detener_escucha()
+        exit(1)
