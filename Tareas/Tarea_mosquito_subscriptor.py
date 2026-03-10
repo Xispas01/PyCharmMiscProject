@@ -2,8 +2,8 @@ from paho.mqtt.client import Client
 import time
 import sys
 
-THE_BROKER = "192.168.1.129"
-THE_TOPIC = "$SYS/"
+THE_BROKER = "localhost"
+THE_TOPIC = "ChatLog"
 topic_test1 = THE_TOPIC + "test/UPV_1"
 topic_test2 = THE_TOPIC + "test/UPV_2"
 last_msg = {}
@@ -20,7 +20,7 @@ def on_message(client, userdata, message):
         print("mensaje " + received_msg)
     if message.topic == topic_test2:
         print(received_msg.split())
-        campos = received_msg.split()
+        campos = received_msg.split(":")
         dato = int(campos[1])
 
 
