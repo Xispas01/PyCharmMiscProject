@@ -33,6 +33,7 @@ def ServiceConection(conexion):
     # print("antes de send")
     try:
         if data_deserialized == "CERRAR":
+            global Work
             Work = False
             respuesta = "¡Cerrando Servidor!"
         elif data_deserialized == "HORA":
