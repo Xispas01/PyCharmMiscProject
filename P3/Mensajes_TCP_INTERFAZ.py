@@ -3,7 +3,7 @@ import threading
 import tkinter as tk
 from tkinter import scrolledtext
 
-#Estado global
+# Estado global
 dicc_conexiones_establecidas = {'None': None}
 
 # Referencias a widgets (se asignan en main())
@@ -17,34 +17,39 @@ entry_puerto_destino = None
 entry_mensaje = None
 
 
-#Metodos de Utilidades
+# Metodos de Utilidades
 
 def mostrar_mensaje(msg: str):
-    """Añade una línea al área de texto de forma thread-safe."""
+    #Añade una línea al área de texto de forma thread-safe.
+
     def _insert():
         texto_mensajes.config(state=tk.NORMAL)
         texto_mensajes.insert(tk.END, msg + '\n')
         texto_mensajes.see(tk.END)
         texto_mensajes.config(state=tk.DISABLED)
+
     ventana.after(0, _insert)
 
 
 def actualizar_opciones_desplegable():
-    """Reconstruye el menú desplegable con las conexiones actuales."""
+    #Reconstruye el menú desplegable con las conexiones actuales
+
     def _update():
         desplegable_seleccion_conexion['menu'].delete(0, 'end')
-        for opcion in dicc_conexiones_establecidas.keys():
+        # CORRECCIÓN 1: Usar list() para evitar errores si el diccionario cambia de tamaño
+        for opcion in list(dicc_conexiones_establecidas.keys()):
             desplegable_seleccion_conexion['menu'].add_command(
                 label=opcion,
                 command=lambda v=opcion: opcion_seleccionada.set(v)
             )
+
     ventana.after(0, _update)
 
 
-#Lógica de red
+# Lógica de red
 
 def hilo_recibir_mensajes(conexion: socket.socket, direccion_puerto: str):
-    #Bucle de recepción continua para una conexión activa.
+    # Bucle de recepción continua para una conexión activa.
     while True:
         try:
             datos = conexion.recv(1024)
@@ -62,16 +67,19 @@ def hilo_recibir_mensajes(conexion: socket.socket, direccion_puerto: str):
     if direccion_puerto in dicc_conexiones_establecidas:
         del dicc_conexiones_establecidas[direccion_puerto]
         actualizar_opciones_desplegable()
+        # Restablecer el valor del menú si la conexión cerrada era la seleccionada
+        if opcion_seleccionada.get() == direccion_puerto:
+            opcion_seleccionada.set('Conexiones')
 
 
 def hilo_servidor(puerto: int):
-    """Hilo principal del servidor: acepta conexiones indefinidamente."""
+    #Hilo principal del servidor: acepta conexiones indefinidamente.
     servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         servidor.bind(('0.0.0.0', puerto))
         servidor.listen(5)
-        mostrar_mensaje(f"Hola esperando aceptar conexiones por {puerto}")
+        mostrar_mensaje(f"Esperando aceptar conexiones por {puerto}")
 
         while True:
             try:
@@ -79,6 +87,9 @@ def hilo_servidor(puerto: int):
                 dir_puerto = f"{direccion[0]}:{direccion[1]}"
                 mostrar_mensaje(f"Nueva conexión {dir_puerto} establecida")
                 dicc_conexiones_establecidas[dir_puerto] = conexion
+
+                # CORRECCIÓN 2: Auto-seleccionar la nueva conexión en la interfaz gráfica
+                ventana.after(0, lambda dp=dir_puerto: opcion_seleccionada.set(dp))
                 actualizar_opciones_desplegable()
 
                 t = threading.Thread(
@@ -90,7 +101,7 @@ def hilo_servidor(puerto: int):
             except socket.error:
                 break
     except Exception as e:
-        mostrar_mensaje(f"Error al iniciar servidor: {e}")
+        mostrar_mensaje(f"! Error al iniciar servidor: {e}")
     finally:
         servidor.close()
 
@@ -100,7 +111,7 @@ def hilo_servidor(puerto: int):
 def iniciar_servidor():
     puerto_str = entry_puerto_servidor.get().strip()
     if not puerto_str.isdigit():
-        mostrar_mensaje("⚠ Puerto servidor inválido.")
+        mostrar_mensaje("! Puerto servidor inválido.")
         return
     t = threading.Thread(target=hilo_servidor, args=(int(puerto_str),), daemon=True)
     t.start()
@@ -110,14 +121,14 @@ def conectar():
     ip = entry_ip_destino.get().strip()
     puerto_str = entry_puerto_destino.get().strip()
     if not ip or not puerto_str.isdigit():
-        mostrar_mensaje("⚠ IP o puerto destino inválidos.")
+        mostrar_mensaje("! IP o puerto destino inválidos.")
         return
 
     puerto = int(puerto_str)
     dir_puerto = f"{ip}:{puerto}"
 
     if dir_puerto in dicc_conexiones_establecidas:
-        mostrar_mensaje(f"⚠ Ya existe una conexión con {dir_puerto}.")
+        mostrar_mensaje(f"! Ya existe una conexión con {dir_puerto}.")
         return
 
     conexion = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -125,6 +136,9 @@ def conectar():
         conexion.connect((ip, puerto))
         mostrar_mensaje(f"Nueva conexión {dir_puerto} establecida")
         dicc_conexiones_establecidas[dir_puerto] = conexion
+
+        # CORRECCIÓN 2: Auto-seleccionar la nueva conexión en la interfaz gráfica
+        ventana.after(0, lambda dp=dir_puerto: opcion_seleccionada.set(dp))
         actualizar_opciones_desplegable()
 
         t = threading.Thread(
@@ -134,10 +148,10 @@ def conectar():
         )
         t.start()
     except socket.error as e:
-        mostrar_mensaje(f"Error al conectar con {dir_puerto}: {e}")
+        mostrar_mensaje(f"! Error al conectar con {dir_puerto}: {e}")
 
 
-def enviar_mensaje():
+def enviar_mensaje(event=None):  # event=None permite que sea llamado tanto por el botón como por la tecla Enter
     dir_puerto = opcion_seleccionada.get()
     if dir_puerto in ('Conexiones', 'None', ''):
         mostrar_mensaje("Selecciona una conexión.")
@@ -146,12 +160,18 @@ def enviar_mensaje():
     if conexion is None:
         mostrar_mensaje("Conexión no válida.")
         return
+
     mensaje = entry_mensaje.get()
+    if not mensaje.strip():  # Evitar enviar mensajes vacíos
+        return
+
     try:
-        conexion.send(mensaje.encode('utf-8'))
+        # CORRECCIÓN 3: Usar sendall y vaciar la caja de texto
+        conexion.sendall(mensaje.encode('utf-8'))
         mostrar_mensaje(f"Enviado por conexión {dir_puerto} el mensaje: {mensaje}")
+        entry_mensaje.delete(0, tk.END)  # Limpiar el cuadro de texto tras enviar
     except socket.error as e:
-        mostrar_mensaje(f"Error al enviar a {dir_puerto}: {e}")
+        mostrar_mensaje(f"! Error al enviar a {dir_puerto}: {e}")
 
 
 def cerrar_conexion():
@@ -171,7 +191,7 @@ def cerrar_conexion():
         opcion_seleccionada.set('Conexiones')
 
 
-#Construcción de la interfaz
+# Construcción de la interfaz
 
 def main():
     global ventana, texto_mensajes, opcion_seleccionada, desplegable_seleccion_conexion
@@ -182,17 +202,17 @@ def main():
     ventana.resizable(False, False)
 
     # Fuente por defecto
-    font_label  = ('Helvetica', 10)
-    font_bold   = ('Helvetica', 10, 'bold')
-    font_btn    = ('Helvetica', 10)
+    font_label = ('Helvetica', 10)
+    font_bold = ('Helvetica', 10, 'bold')
+    font_btn = ('Helvetica', 10)
 
     PAD = dict(padx=8, pady=3)
 
-    #Separador superior
+    # Separador superior
     tk.Frame(ventana, height=4, bd=1, relief=tk.SUNKEN).grid(
         row=0, column=0, columnspan=3, sticky='ew')
 
-    #Sección SERVIDOR
+    # Sección SERVIDOR
     tk.Label(ventana, text="SERVIDOR PARA ACEPTAR NUEVAS CONEXIONES",
              font=font_bold).grid(row=1, column=0, columnspan=3, pady=(6, 2))
 
@@ -205,11 +225,11 @@ def main():
               width=18, command=iniciar_servidor).grid(
         row=3, column=0, columnspan=3, pady=5)
 
-    #Separador
+    # Separador
     tk.Frame(ventana, height=4, bd=1, relief=tk.SUNKEN).grid(
         row=4, column=0, columnspan=3, sticky='ew')
 
-    #Sección NUEVA CONEXIÓN
+    # Sección NUEVA CONEXIÓN
     tk.Label(ventana, text="NUEVA CONEXIÓN",
              font=font_bold).grid(row=5, column=0, columnspan=3, pady=(6, 2))
 
@@ -227,7 +247,6 @@ def main():
               width=14, command=conectar).grid(
         row=8, column=0, columnspan=3, pady=5)
 
-
     tk.Frame(ventana, height=4, bd=1, relief=tk.SUNKEN).grid(
         row=9, column=0, columnspan=3, sticky='ew')
 
@@ -237,7 +256,6 @@ def main():
         font=('Courier', 9), wrap=tk.WORD
     )
     texto_mensajes.grid(row=10, column=0, columnspan=3, padx=8, pady=6)
-
 
     tk.Frame(ventana, height=4, bd=1, relief=tk.SUNKEN).grid(
         row=11, column=0, columnspan=3, sticky='ew')
@@ -257,6 +275,9 @@ def main():
         row=14, column=0, sticky='e', **PAD)
     entry_mensaje = tk.Entry(ventana, width=32)
     entry_mensaje.grid(row=14, column=1, columnspan=2, sticky='w', **PAD)
+
+    # Vincular la tecla Enter en la caja de texto a la función enviar_mensaje
+    entry_mensaje.bind('<Return>', enviar_mensaje)
 
     tk.Button(ventana, text="Enviar mensaje", font=font_btn,
               width=16, command=enviar_mensaje).grid(
