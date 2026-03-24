@@ -4,9 +4,11 @@ AUTORES:
     Jose Gimeno Niza
 Descripciones:
     0-Caso de ejemplo PDF
-
+        Cliente.py
+        Servidor.py
     1-CASO HORA por TCP
-
+        Cliente_Hora.py
+        Servidor_Hora.py
     2-CASO datos serializados
 
     3-CASO TRANSFERENCIA DE DATOS PESADOS
