@@ -26,7 +26,13 @@ if __name__ == '__main__':
         data = cv2.imread("./Cat.jpg")
         # Serializar los datos utilizando pickle.dumps()
         data_serialized = pickle.dumps(data)
+        dataSize = data_serialized.__sizeof__()
+        conexion.send(pickle.dumps(dataSize))
         conexion.sendall(data_serialized)
 
+        conexion.settimeout(10)
+        Response = conexion.recv(1024)
+
+        print(Response)
         # Cerramos la conexión
         conexion.close()
