@@ -10,7 +10,10 @@ Descripciones:
         Cliente_Hora.py
         Servidor_Hora.py
     2-CASO datos serializados
-
+        Cliente_Serializado.py
+        Servidor_Serializado.py
     3-CASO TRANSFERENCIA DE DATOS PESADOS
-
+        Cliente_BigSize.py
+        Servidor_BigSize.py
     4-CASO DE CHAT POR INTERFAZ (Concurrente Multi-hilo)
+        Mensajes_TCP_INTERFAZ.py
