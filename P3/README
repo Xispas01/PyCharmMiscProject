@@ -1,0 +1,14 @@
+Práctica 3 TCP
+AUTORES:
+    Alejandro Mancebo Arnal
+    Jose Gimeno Niza
+Descripciones:
+    0-Caso de ejemplo PDF
+
+    1-CASO HORA por TCP
+
+    2-CASO datos serializados
+
+    3-CASO TRANSFERENCIA DE DATOS PESADOS
+
+    4-CASO DE CHAT POR INTERFAZ (Concurrente Multi-hilo)
