@@ -139,12 +139,12 @@ def conectar():
 
 def enviar_mensaje():
     dir_puerto = opcion_seleccionada.get()
-    if dir_puerto in ('Desplegar', 'None', ''):
-        mostrar_mensaje("⚠ Selecciona una conexión.")
+    if dir_puerto in ('Conexiones', 'None', ''):
+        mostrar_mensaje("Selecciona una conexión.")
         return
     conexion = dicc_conexiones_establecidas.get(dir_puerto)
     if conexion is None:
-        mostrar_mensaje("⚠ Conexión no válida.")
+        mostrar_mensaje("Conexión no válida.")
         return
     mensaje = entry_mensaje.get()
     try:
@@ -156,8 +156,8 @@ def enviar_mensaje():
 
 def cerrar_conexion():
     dir_puerto = opcion_seleccionada.get()
-    if dir_puerto in ('Desplegar', 'None', ''):
-        mostrar_mensaje("⚠ Selecciona una conexión.")
+    if dir_puerto in ('Conexiones', 'None', ''):
+        mostrar_mensaje("Selecciona una conexión.")
         return
     conexion = dicc_conexiones_establecidas.get(dir_puerto)
     if conexion is not None:
@@ -168,7 +168,7 @@ def cerrar_conexion():
         del dicc_conexiones_establecidas[dir_puerto]
         mostrar_mensaje(f"Cerrada conexión {dir_puerto} y finalizado hilo")
         actualizar_opciones_desplegable()
-        opcion_seleccionada.set('Desplegar')
+        opcion_seleccionada.set('Conexiones')
 
 
 #Construcción de la interfaz
@@ -248,7 +248,7 @@ def main():
 
     tk.Label(ventana, text="Seleccionar conexión:", font=font_label).grid(
         row=13, column=0, sticky='e', **PAD)
-    opcion_seleccionada = tk.StringVar(value='Desplegar')
+    opcion_seleccionada = tk.StringVar(value='Conexiones')
     desplegable_seleccion_conexion = tk.OptionMenu(ventana, opcion_seleccionada, None)
     desplegable_seleccion_conexion.config(font=font_label, width=18)
     desplegable_seleccion_conexion.grid(row=13, column=1, sticky='w', **PAD)
