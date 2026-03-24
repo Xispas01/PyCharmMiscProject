@@ -9,7 +9,7 @@ if __name__ == '__main__':
     # Establecemos una conexión al servidor
     conexion.connect((direccion_ip, puerto))
     # Enviamos un mensaje al servidor
-    message = "¡Hola servidor!"
+    message = "HORA"
     conexion.send(message.encode())
     # Recibimos una respuesta del servidor
     respuesta = conexion.recv(1024)
