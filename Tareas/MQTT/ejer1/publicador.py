@@ -9,7 +9,7 @@ ROOT = "$SYS/"
 topic1 = ROOT+"sensor/datoA"
 
 if __name__ == '__main__':
-    client = Client(client_id="sub-test-pub")
+    client = Client(client_id="PubTest")
     client.connect(THE_BROKER, 1883)
 
     while True:
