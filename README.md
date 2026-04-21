@@ -12,6 +12,7 @@ Esta es la organización actual de las carpetas:
 
 * **[P1](./P1):** Descripción de la 1º Práctica: Sincronización de hilos.
 * **[P2](./P2):** Descripción de la 2º Práctica: Estructuras de comunicación Cliente-Servidor con UDP.
+* **[P3](./P3):** Descripción de la 3º Práctica: Estructuras de comunicación Cliente-Servidor con TCP y trasferencia de datos con dirección específica.
 * **[Tareas](./Tareas):** Contiene los ejercicios que no son prácticas y entregas adicionales.
 
 ---
