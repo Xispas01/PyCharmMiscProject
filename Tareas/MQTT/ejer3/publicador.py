@@ -5,6 +5,7 @@ import time
 import sys
 
 THE_BROKER = "localhost"
+BROKER_PORT = 1883
 ROOT = "$SYS/"
 TCocina = ROOT+"casa/habitación/cocina/temperatura"
 TDorm1 = ROOT+"casa/habitación/dorm1/temperatura"
@@ -21,7 +22,7 @@ def TempGen():
 
 if __name__ == '__main__':
     client = Client(client_id="RoomTracker")
-    client.connect(THE_BROKER, 1883)
+    client.connect(THE_BROKER, BROKER_PORT)
 
     while True:
         for topic in tempTopics:

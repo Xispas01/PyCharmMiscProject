@@ -5,6 +5,7 @@ import time
 import sys
 
 THE_BROKER = "localhost"
+BROKER_PORT = 1883
 ROOT = "$SYS/"
 topic1 = ROOT+"sensor/datoB"
 last_msg = {}
@@ -33,7 +34,7 @@ if __name__ == '__main__':
     client = Client(client_id="SubFormated")
     client.on_connect = on_connect
     client.on_message = on_message
-    client.connect(THE_BROKER, 1883)
+    client.connect(THE_BROKER, BROKER_PORT)
 
     client.subscribe(topic1)
     client.loop_start()

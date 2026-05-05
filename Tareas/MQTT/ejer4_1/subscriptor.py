@@ -5,6 +5,7 @@ import time
 import sys
 
 THE_BROKER = "localhost"
+BROKER_PORT = 1883
 ROOT = "$SYS/"
 Temp = ROOT+"casa/habitación/+/temperatura"
 
@@ -36,7 +37,7 @@ if __name__ == '__main__':
     client = Client(client_id="TempTrakerGeneral")
     client.on_connect = on_connect
     client.on_message = on_message
-    client.connect(THE_BROKER, 1883)
+    client.connect(THE_BROKER, BROKER_PORT)
 
     client.subscribe(Temp)
     client.loop_start()
