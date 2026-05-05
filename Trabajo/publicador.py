@@ -17,7 +17,7 @@ topicList = [position,target_pos,battery]
 topicConfig = {position:(0,False),target_pos:(1,True),battery:(0,False)}
 
 if __name__ == '__main__':
-    client = Client(client_id="Robot_[ID]")
+    client = Client(client_id=f"Robot_{ID:03d}")
     client.connect(THE_BROKER, BROKER_PORT)
 
     while True:
