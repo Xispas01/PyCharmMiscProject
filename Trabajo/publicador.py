@@ -10,11 +10,15 @@ ID = 1
 
 ROOT = "$Planta/"
 position = ROOT+f"robots/{ID:03d}/position"
-target_pos = ROOT+f"robots/{ID:03d}/target_pos"
+event = ROOT+f"robots/{ID:03d}/event"
 battery = ROOT+f"robots/{ID:03d}/battery"
 
-topicList = [position,target_pos,battery]
-topicConfig = {position:(0,False),target_pos:(1,True),battery:(0,False)}
+topicList = [position,event,battery]
+topicConfig = {position:(0,False),event:(1,True),battery:(0,False)}
+
+def PublishTopic(t,payload):
+    cfg = topicConfig[t]
+    client.publish(t, payload, cfg[0], cfg[1])
 
 if __name__ == '__main__':
     client = Client(client_id=f"Robot_{ID:03d}")
@@ -22,8 +26,8 @@ if __name__ == '__main__':
 
     while True:
         print("publicando datos")
-        for t in topicList:
-            lectura = random.randint(1,10)
-            cfg = topicConfig[t]
-            client.publish(t,lectura,cfg[0],cfg[1])
+        payload = {}
+        PublishTopic(position,payload)
+        PublishTopic(event, payload)
+        PublishTopic(battery, payload)
         time.sleep(1)
