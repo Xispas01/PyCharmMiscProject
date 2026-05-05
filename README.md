@@ -15,6 +15,7 @@ Esta es la organización actual de las carpetas:
 * **[P3](./P3):** Descripción de la 3º Práctica: Estructuras de comunicación Cliente-Servidor con TCP y trasferencia de datos con dirección específica.
 * **[P4](./P4):** Descripción de la 4º Práctica: Comunicaciones Subscriptores-publicadores en MQTT.
 * **[Tareas](./Tareas):** Contiene los ejercicios que no son prácticas y entregas adicionales.
+* **[Trabajo](./Trabajo):** Contiene el trabajo de la asignatura 'Redes y Sistemas distribuidos para control'.
 
 ---
 
