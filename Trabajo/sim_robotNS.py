@@ -1,234 +1,136 @@
 #!/usr/bin/env python
 # coding: utf-8
 from json import JSONEncoder
+from tabnanny import verbose
 
-import paho.mqtt.client as MQTTC
-import json
-import tkinter as tk
+from time import sleep
 import threading
-import time
+import json
+import paho.mqtt.client as MQTTC
+import socket
 import pickle
+import time
 import sys
 
-BROKER = "localhost"
-PORT = 1883
+MQBROKER = "localhost"
+MQPORT = 1883
+
+UDPHOST = "localhost"
+UDPPORT = 9001
+
+TCPHOST = "localhost"
+TCPPORT = 12345
+
+MQROOT = "$Planta/"
+
+ControlPrints = False
+
+class Robot:
+    def __init__(self,RobotID,MQTTConfig,UDPConfig,TCPConfig):
+        self.RobotID = RobotID
+        self.MQTTClient = MQTTC.Client(client_id=f"{RobotID}")
+
+        self.MQTTBroker = MQTTConfig[0]
+        self.MQTTBrokerPort = MQTTConfig[1]
+
+        self.PositionTopic = MQROOT + f"robots/{RobotID}/pos"
+        self.EventTopic = MQROOT + f"robots/{RobotID}/event"
+        self.BatteryTopic = MQROOT + f"robots/{RobotID}/battery"
+
+        self.UDPSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.UDPServer = (UDPConfig[0], UDPConfig[1])
+
+        # Creamos un objeto socket TCP
+        self.TCPSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.TCPServer = (TCPConfig[0],TCPConfig[1])
+
+        self.Position = {"x": 20, "y": 5}
+        self.Event = "Start"
+        self.Battery = 100.0
+
+        self.CheckStop = False
+        self.HasTarget = False
+        self.TargetPosition = None
+
+    def MQTTHeartBeat(self):
+        while True:
+            sleep(0.2)
+            if ControlPrints:
+                print(f"{self.RobotID} sending MQTT HB")
+            self.MQTTClient.publish(self.PositionTopic,f"{json.dumps(self.Position)}")
+            self.MQTTClient.publish(self.EventTopic, f"Last Event: {self.Event}")
+            self.MQTTClient.publish(self.BatteryTopic, f"{self.Battery:03.02f}%")
 
 
-# Constantes globales
-WINDOW_SIZE = 50
-ROBOT_SIZE  = 10
+    def UDPHeartBeat(self):
+        while True:
+            sleep(0.5)
+            if ControlPrints:
+                print(f"{self.RobotID} sending UDP HB")
+            # Serializar los datos utilizando pickle.dumps()
+            hora_actual = time.time()
+            data_serialized = pickle.dumps({ 'robot_id': f"{self.RobotID}", 'seq': 142, 'timestamp': hora_actual, 'battery': f"{self.Battery}" })
+            # Enviar los datos serializados a través del socket
+            self.UDPSocket.sendto(data_serialized, self.UDPServer)
 
-TARGET_TOPICS = {
-    "Robot1/target_pos": "Robot1",
-    "Robot2/target_pos": "Robot2",
-    "Robot3/target_pos": "Robot3",
-}
-
-# Broker interno (pub/sub entre hilos)
-class MessageBroker:
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._subscribers: dict[str, list] = {}
-
-    def subscribe(self, topic: str, callback):
-        with self._lock:
-            self._subscribers.setdefault(topic, []).append(callback)
-        print(f"[Broker] Suscripción registrada -> topic '{topic}'")
-
-    def publish(self, topic: str, message):
-        with self._lock:
-            callbacks = list(self._subscribers.get(topic, []))
-        if callbacks:
-            print(f"[Broker] Publicando en '{topic}': {message}")
-            for cb in callbacks:
-                cb(message)
-        else:
-            print(f"[Broker] Sin suscriptores aún en '{topic}': {message}")
-
-# Instancia global del broker interno
-broker = MessageBroker()
-
-# Robot
-class Robot(threading.Thread):
-
-    def __init__(self, robot_id, name, start_pos,MQTTBroker,MQTTBrokerPort):
-        super().__init__(daemon=True)
-        self.robot_id    = robot_id
-        self.name        = name
-        self.current_pos = list(start_pos)
-        self.target_pos  = None
-
-        self._stop_event   = threading.Event()
-        self._target_event = threading.Event()
-
-        # Suscribirse al broker interno
-
-        # Topics MQTT
-        ROOT = "$Planta/"
-
-        self._topic = ROOT + f"robots/{robot_id}/target_pos"
-        broker.subscribe(self._topic, self.on_target_received)
-
-        position = ROOT + f"robots/{robot_id}/position"
-        event = ROOT + f"robots/{robot_id}/event"
-        battery = ROOT + f"robots/{robot_id}/battery"
-        self.topicList = {"position":position, "event":event, "battery":battery}
-
-        self.topicConfig = {position: (0, False), event: (1, True), battery: (0, False)}
-
-        self.client = MQTTC.Client(client_id=f"Robot_{robot_id}")
-        self.client.connect(MQTTBroker,MQTTBrokerPort)
-
-    def PublishTopic(self, t, payload):
-        cfg = self.topicConfig[t]
-        self.client.publish(t, json.dumps(payload), cfg[0], cfg[1])
-
-    def on_target_received(self, target_pos):
-        #Llamado por el broker interno cuando llega un nuevo destino.
-        self.target_pos = list(target_pos)
-        print(f"[{self.name}] Objetivo recibido → {self.target_pos}")
-        self._target_event.set()  # desbloquea el hilo en espera
-
-    def run(self):
-        print(f"[{self.name}] Iniciando en {self.current_pos}, esperando objetivo…")
-
-
-        # Esperar hasta recibir el objetivo
-        while not self._target_event.is_set() and not self._stop_event.is_set():
-            time.sleep(0.05)
-
-        if self._stop_event.is_set():
-            return
-
-        print(f"[{self.name}] Moviéndome hacia {self.target_pos}")
-
-        # Bucle de movimiento
-        while self.current_pos != self.target_pos and not self._stop_event.is_set():
-            self.move_towards_target()
-            self.update_position_on_canvas()
-
-            ts = time.time()
-            payload = {"X":self.current_pos[0],"Y":self.current_pos[0],"TS":ts}
-            self.PublishTopic(self.topicList["position"],payload)
-
-            time.sleep(0.5)
-
-        if not self._stop_event.is_set():
-            print(f"[{self.name}] ¡Ha llegado a {self.target_pos}!")
-
-
-    def move_towards_target(self):
-        if self.current_pos[0] < self.target_pos[0]:
-            self.current_pos[0] += 1
-        elif self.current_pos[0] > self.target_pos[0]:
-            self.current_pos[0] -= 1
-
-        if self.current_pos[1] < self.target_pos[1]:
-            self.current_pos[1] += 1
-        elif self.current_pos[1] > self.target_pos[1]:
-            self.current_pos[1] -= 1
-
-    def stop(self):
-        self._stop_event.set()
-
-
-# Aplicación principal
-class RobotSimulatorApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Simulador de Robots")
-
-        # Botón
-        self.start_button = tk.Button(
-            self.root,
-            text="Iniciar Simulación",
-            command=self.start_simulation
-        )
-        self.start_button.pack(pady=10)
-
-        # Crear robots (sin target aún; lo recibirán vía MQTT)
-        self.robots = [
-            Robot(self.canvas, 1, "Robot1", "red",   [1, 1],"Localhost",1883),
-            Robot(self.canvas, 2, "Robot2", "green", [48, 1],"Localhost",1883),
-            Robot(self.canvas, 3, "Robot3", "blue",  [1, 48],"Localhost",1883),
-        ]
-        self.display_initial_positions()
-
-        # Cliente MQTT
-        self.mqtt_client = MQTTC.Client()
-        self.mqtt_client.user_data_set(self)
-        self.mqtt_client.on_connect = self._on_mqtt_connect
-        self.mqtt_client.on_message = self._on_mqtt_message
-        try:
-            self.mqtt_client.connect(BROKER, PORT, 60)
-            mqtt_thread = threading.Thread(
-                target=self.mqtt_client.loop_forever,
-                daemon=True
-            )
-            mqtt_thread.start()
-            print(f"[MQTT] Conectando a {BROKER}:{PORT}…")
-        except Exception as e:
-            print(f"[MQTT] No se pudo conectar al broker: {e}")
-
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-
-
-    # Callbacks MQTT
-
-    def _on_mqtt_connect(self, client, userdata, flags, rc):
-        if rc == 0:
-            print("[MQTT] Conectado al broker")
-            for topic in TARGET_TOPICS:
-                client.subscribe(topic)
-                print(f"[MQTT] Suscrito a: {topic}")
-        else:
-            print(f"[MQTT] Error de conexión, código: {rc}")
-
-    def _on_mqtt_message(self, client, userdata, msg):
-        try:
-            data   = json.loads(msg.payload.decode())
-            target = [data["x"], data["y"]]
-
-            robot_name = TARGET_TOPICS.get(msg.topic)
-            if robot_name:
-                broker.publish(f"{robot_name}/target_pos", target)
+    def TCPComandCenter(self):
+        while True:
+            # Recibir datos
+            Command = self.TCPSocket.recv(1024).decode()
+            if Command.startswith('SET_TARGET'):
+                if ControlPrints:
+                    print(f"SET_TARGET {Command}\n")
+                print(f"SET_TARGET {Command}\n")
+                data = Command.split(' ')
+                if len(data) != 3:
+                    print(f"SET_TARGET {Command} is invalid\n")
+                else :
+                    try:
+                        Tpos = {'x':int(data[1]),'y':int(data[2])}
+                    except  ValueError:
+                        print(f"SET_TARGET {Command} is invalid\n")
+                    else:
+                        self.TargetPosition = Tpos
+                        print(f"Target set to {Tpos}\n")
+            elif Command.startswith('STOP'):
+                if ControlPrints:
+                    print(f"STOP {Command}\n")
+                self.TCPSocket.send("ACK".encode())
+                self.TCPSocket.send(f"{self.Position}".encode())
+            elif Command.startswith('RESUME'):
+                if ControlPrints:
+                    print(f"RESUME {Command}\n")
+                self.TCPSocket.send("ACK".encode())
+            elif Command.startswith('GET_STATUS'):
+                if ControlPrints:
+                    print(f"GET_STATUS {Command}\n")
+            elif Command.startswith('SHUTDOWN'):
+                if ControlPrints:
+                    print(f"SHUTDOWN {Command}\n")
+                self.TCPSocket.send("ACK".encode())
+                self.TCPSocket.close()
+                break
             else:
-                print(f"[MQTT] Topic desconocido: {msg.topic}")
+                if ControlPrints:
+                    print(f"Comando \"{Command}\" desconocido\n")
 
-        except (json.JSONDecodeError, KeyError) as e:
-            print(f"[MQTT] Error al procesar mensaje de {msg.topic}: {e}")
+    def start(self):
+        self.MQTTClient.connect(self.MQTTBroker,self.MQTTBrokerPort)
+        self.TCPSocket.connect(self.TCPServer)
 
+        HiloMQTTHB = threading.Thread(name='MQTTHB', target=self.MQTTHeartBeat, args=())
+        HiloUDPHB = threading.Thread(name='UDPHB', target=self.UDPHeartBeat, args=())
+        HiloTCPCC = threading.Thread(name='TCPCC', target=self.TCPComandCenter, args=())
 
-    # UI
-    def display_initial_positions(self):
-        #Dibuja los robots en su posición inicial antes de arrancar.
-        for robot in self.robots:
-            robot.draw_oval()
+        HiloMQTTHB.start()
+        HiloUDPHB.start()
+        HiloTCPCC.start()
 
-    def start_simulation(self):
-        #Arranca los hilos de los robots y deshabilita el botón.
-        for robot in self.robots:
-            self.canvas.delete(robot.robot_shape)
-        for robot in self.robots:
-            robot.start()
-
-        self.start_button["state"] = "disabled"
-        print("Simulación iniciada. Esperando coordenadas vía MQTT…")
-
-    def stop_simulation(self):
-        for robot in self.robots:
-            robot.stop()
-
-    def on_closing(self):
-        self.stop_simulation()
-        try:
-            self.mqtt_client.disconnect()
-        except Exception:
-            pass
-        self.root.destroy()
-
-
-# Punto de entrada
-root = tk.Tk()
-app  = RobotSimulatorApp(root)
-root.mainloop()
+if __name__ == '__main__':
+    # Punto de entrada
+    R1 = Robot("R1",[MQBROKER,MQPORT],[UDPHOST,UDPPORT],[TCPHOST,TCPPORT])
+    R1.start()
+    R2 = Robot("R2",[MQBROKER,MQPORT],[UDPHOST,UDPPORT],[TCPHOST,TCPPORT])
+    R2.start()
+    while True:
+        pass
