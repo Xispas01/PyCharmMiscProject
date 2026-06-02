@@ -215,8 +215,8 @@ class RobotSimulatorApp:
         if rc == 0:
             print("[MQTT] Conectado al broker")
             # Escucha global de cualquier instanciación u objetivo de robot
-            client.subscribe("+/target_pos")
-            print("[MQTT] Suscrito dinámicamente a: +/target_pos")
+            client.subscribe("$Planta/robots/+/position")
+            print("[MQTT] Suscrito dinámicamente a: $Planta/robots/+/position")
         else:
             print(f"[MQTT] Error de conexión, código: {rc}")
 

@@ -53,6 +53,7 @@ class Robot:
         self.Battery = 100.0
 
         self.ActiveState = True
+        self.Status = 'IDLE'
         self.Halted = False
         self.ArriveTarget = False
         self.HasTarget = False
@@ -63,9 +64,13 @@ class Robot:
             sleep(0.2)
             if ControlPrints:
                 print(f"{self.RobotID} sending MQTT HB")
-            self.MQTTClient.publish(self.PositionTopic,f"{json.dumps(self.Position)}")
-            self.MQTTClient.publish(self.EventTopic, f"Last Event: {self.Event}")
-            self.MQTTClient.publish(self.BatteryTopic, f"{self.Battery:03.02f}%")
+
+            hora_actual = time.time()
+            positionData = {'x':self.Position['x'],'y':self.Position['y'],'heading':self.TargetPosition,'ts':hora_actual}
+            batteryData = {'level':self.Battery,'ts':hora_actual}
+
+            self.MQTTClient.publish(self.PositionTopic,f"{json.dumps(positionData)}")
+            self.MQTTClient.publish(self.BatteryTopic, f"{json.dumps(batteryData)}")
 
 
     def UDPHeartBeat(self):
@@ -75,7 +80,7 @@ class Robot:
                 print(f"{self.RobotID} sending UDP HB")
             # Serializar los datos utilizando pickle.dumps()
             hora_actual = time.time()
-            data_serialized = pickle.dumps({ 'robot_id': f"{self.RobotID}", 'seq': 142, 'timestamp': hora_actual, 'battery': f"{self.Battery}" })
+            data_serialized = pickle.dumps({ 'robot_id': self.RobotID, 'seq': 142, 'ts': hora_actual, 'battery': self.Battery, 'status':self.Status})
             # Enviar los datos serializados a través del socket
             self.UDPSocket.sendto(data_serialized, self.UDPServer)
         self.UDPSocket.close()
@@ -99,9 +104,6 @@ class Robot:
                     else:
                         self.TargetPosition = Tpos
                         self.HasTarget = True
-                        print(f"mqttTargetSucio")
-                        targetPosTopic = MQROOT + f"robots/{self.RobotID}/target_pos"
-                        self.MQTTClient.publish(targetPosTopic,f"{json.dumps(self.TargetPosition)}")
                         print(f"Target set to {Tpos} for {self.RobotID}\n")
             elif Command.startswith('STOP'):
                 if ControlPrints:
@@ -109,16 +111,18 @@ class Robot:
                 self.TCPSocket.send("ACK".encode())
                 self.TCPSocket.send(f"{self.Position}".encode())
                 self.Halted = True
+                self.Status = 'HALTED'
             elif Command.startswith('RESUME'):
                 if ControlPrints:
                     print(f"RESUME {Command}\n")
                 self.TCPSocket.send("ACK".encode())
                 self.Halted = False
+                self.Status = 'IDLE'
             elif Command.startswith('GET_STATUS'):
                 if ControlPrints:
                     print(f"GET_STATUS {Command}\n")
                 hora_actual = time.time()
-                data_serialized = pickle.dumps({'robot_id': f"{self.RobotID}", 'seq': 142, 'timestamp': hora_actual, 'battery': f"{self.Battery}"})
+                data_serialized = pickle.dumps({'robot_id': self.RobotID, 'seq': 142, 'ts': hora_actual, 'battery': self.Battery,'halted': self.Halted})
                 self.TCPSocket.send(data_serialized)
             elif Command.startswith('SHUTDOWN'):
                 if ControlPrints:
@@ -150,22 +154,39 @@ class Robot:
         self.Battery += amount
         if self.Battery > 100.0:
             self.Battery = 100.0
-        if self.Battery < 0.0:
+        elif self.Battery < 0.0:
             self.Battery = 0.0
+
+        if self.Battery < 5.0:
+            self.Halted = True
+            self.Status = 'HALTED'
+        if self.Battery < 10.0:
+            hora_actual = time.time()
+            self.MQTTClient.publish(self.EventTopic,f"{json.dumps({'type':'low_bat','ts':hora_actual})}",qos=1,retain=True)
+
 
     def Simulation(self):
         while self.ActiveState:
             time.sleep(SimTimeStep)
             self.BatteryChange(BATTERY_REGEN_RATE)
-            if ControlPrints:
-                print(f"Objetivo {self.RobotID} {self.TargetPosition}\n")
-                print(f"Posicion {self.RobotID} {self.Position}\n")
-                if self.TargetPosition != None:
-                    print(f"{not self.Halted} and {self.HasTarget} and {not self.CheckTarget()}\n")
             while not self.Halted and self.HasTarget and not self.CheckTarget() and self.Battery + BATTERY_CONSUMPTION_RATE > 0.0:
+                self.Status = 'MOVING'
+
                 self.move_towards_target()
                 self.BatteryChange(BATTERY_CONSUMPTION_RATE)
+
+                if ControlPrints:
+                    print(f"Objetivo {self.RobotID} {self.TargetPosition}\n")
+                    print(f"Posicion {self.RobotID} {self.Position}\n")
+
+                if self.CheckTarget():
+                    self.HasTarget = False
+                    self.TargetPosition = None
+                    self.Status = 'IDLE'
+                    hora_actual = time.time()
+                    self.MQTTClient.publish(self.EventTopic, f"{json.dumps({'type': 'arrived', 'ts': hora_actual})}",qos=1, retain=True)
                 time.sleep(SimTimeStep)
+
 
     def start(self):
         print(f"{self.RobotID} Arrancando")
