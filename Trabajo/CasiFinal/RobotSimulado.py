@@ -101,9 +101,11 @@ class Robot:
                         Tpos = {'x':int(data[1]),'y':int(data[2])}
                     except  ValueError:
                         print(f"SET_TARGET {Command} is invalid\n")
+                        self.TCPSocket.send("NACK".encode())
                     else:
                         self.TargetPosition = Tpos
                         self.HasTarget = True
+                        self.TCPSocket.send("ACK".encode())
                         print(f"Target set to {Tpos} for {self.RobotID}\n")
             elif Command.startswith('STOP'):
                 if ControlPrints:
