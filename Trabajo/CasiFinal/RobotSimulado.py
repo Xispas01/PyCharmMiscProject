@@ -131,6 +131,7 @@ class Robot:
                 self.ActiveState = False
                 break
             else:
+                self.TCPSocket.send(f"Comando \"{Command}\" desconocido\n".encode())
                 if ControlPrints:
                     print(f"Comando \"{Command}\" desconocido\n")
 
