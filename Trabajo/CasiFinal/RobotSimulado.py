@@ -40,6 +40,7 @@ class Robot:
         self.PositionTopic = MQROOT + f"robots/{RobotID}/position"
         self.EventTopic = MQROOT + f"robots/{RobotID}/event"
         self.BatteryTopic = MQROOT + f"robots/{RobotID}/battery"
+        self.StateTopic = MQROOT + f"robots/{RobotID}/state"
 
         self.UDPSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.UDPServer = (UDPConfig[0], UDPConfig[1])
@@ -70,7 +71,8 @@ class Robot:
             batteryData = {'level':self.Battery,'ts':hora_actual}
 
             self.MQTTClient.publish(self.PositionTopic,f"{json.dumps(positionData)}")
-            self.MQTTClient.publish(self.BatteryTopic, f"{json.dumps(batteryData)}")
+            self.MQTTClient.publish(self.PositionTopic,f"{json.dumps(positionData)}")
+            self.MQTTClient.publish(self.StateTopic, f"{self.Status}")
 
 
     def UDPHeartBeat(self):
