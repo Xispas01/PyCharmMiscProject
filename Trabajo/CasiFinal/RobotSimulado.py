@@ -53,6 +53,7 @@ class Robot:
         self.Event = "Start"
         self.Battery = 100.0
 
+        self.EventTopic = {"type": "ideling", "ts": time.time()}
         self.ActiveState = True
         self.Status = 'IDLE'
         self.Halted = False
@@ -71,7 +72,7 @@ class Robot:
             batteryData = {'level':self.Battery,'ts':hora_actual}
 
             self.MQTTClient.publish(self.PositionTopic,f"{json.dumps(positionData)}")
-            self.MQTTClient.publish(self.PositionTopic,f"{json.dumps(positionData)}")
+            self.MQTTClient.publish(self.BatteryTopic,f"{json.dumps(batteryData)}")
             self.MQTTClient.publish(self.StateTopic, f"{self.Status}")
 
 
@@ -92,9 +93,10 @@ class Robot:
             # Recibir datos
             Command = self.TCPSocket.recv(1024).decode()
             if Command.startswith('SET_TARGET'):
-                if ControlPrints:
-                    print(f"SET_TARGET {Command}\n")
-                print(f"SET_TARGET {Command}\n")
+                if Command.startswith('SET_TARGET'):
+                    print(f"[TCP] {Command}\n")
+                    if ControlPrints:
+                        print(f"SET_TARGET {Command}\n")
                 data = Command.split(' ')
                 if len(data) != 3:
                     print(f"SET_TARGET {Command} is invalid\n")
@@ -167,7 +169,8 @@ class Robot:
             self.Status = 'HALTED'
         if self.Battery < 10.0:
             hora_actual = time.time()
-            self.MQTTClient.publish(self.EventTopic,f"{json.dumps({'type':'low_bat','ts':hora_actual})}",qos=1,retain=True)
+            self.MQTTClient.publish(str(self.EventTopic),f"{json.dumps({'type':'low_bat','ts':hora_actual})}",qos=1,retain=True)
+
 
 
     def Simulation(self):
@@ -194,7 +197,7 @@ class Robot:
 
 
     def start(self):
-        print(f"{self.RobotID} Arrancando")
+        print(f"{self.RobotID} Arrancando\n")
         self.MQTTClient.connect(self.MQTTBroker,self.MQTTBrokerPort)
         self.TCPSocket.connect(self.TCPServer)
 
@@ -208,7 +211,7 @@ class Robot:
         HiloTCPCC.start()
         HiloSimulacion.start()
 
-        print(f"{self.RobotID} En Marcha")
+        print(f"{self.RobotID} En Marcha\n")
 
         HiloMQTTHB.join()
         HiloUDPHB.join()

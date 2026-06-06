@@ -32,6 +32,14 @@ def on_message(client, userdata, msg):
         robot = robots_nodes.get(robot_id)
         if robot is None:
             return
+
+        # Resistencia a Errores: Manejar cadenas de texto puras si json.loads falla
+        raw_payload = msg.payload.decode()
+        try:
+            data = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            data = raw_payload
+
         # POSITION
         if dataName == "position":
             asyncio.run_coroutine_threadsafe(
@@ -49,7 +57,7 @@ def on_message(client, userdata, msg):
                 loop
             )
         # STATUS
-        elif dataName == "status":
+        elif dataName in ("status", "state"):
             asyncio.run_coroutine_threadsafe(
                 robot["status"].write_value(data),
                 loop
@@ -102,8 +110,6 @@ async def main():
     active_robots = await general_stats.add_variable(idx,"ActiveRobots",0)
     targets_reached = await general_stats.add_variable(idx,"TargetsReached",0)
 
-
-
     # ROBOTS
     for robot_id in ["R1", "R2", "R3"]:
         robot_obj = await planta.add_object(idx,f"{robot_id}")
@@ -116,16 +122,18 @@ async def main():
         await target_x.set_writable()
         await target_y.set_writable()
         # VARIABLES
-        robot_battery = await robot_obj.add_variable(idx,"Battery",100.0)
-        robot_status = await robot_obj.add_variable(idx,"Status","IDLE")
-        robot_connected = await robot_obj.add_variable(idx,"Connected",False)
+        robot_battery = await robot_obj.add_variable(idx,"battery",100.0)
+        robot_status = await robot_obj.add_variable(idx,"status","IDLE")
+        robot_connected = await robot_obj.add_variable(idx,"connected",False)
+
         # GUARDAR REFERENCIAS
         robots_nodes[robot_id] = {
-            "pos_x": pos_x,"pos_y":pos_y,
-            "target_x": target_x,"target_y": target_y,
+            "pos_x": pos_x, "pos_y": pos_y,
+            "target_x": target_x, "target_y": target_y,
             "battery": robot_battery,
             "status": robot_status,
-            "connected": robot_connected}
+            "connected": robot_connected
+        }
 
     # MQTT CLIENTE
     MQTTC = Client(client_id="PasarelaMQTT_OPC")
@@ -138,13 +146,15 @@ async def main():
     MQTTC.subscribe("$Planta/robots/+/position")
     MQTTC.subscribe("$Planta/robots/+/battery")
     MQTTC.subscribe("$Planta/robots/+/event")
+    MQTTC.subscribe("$Planta/robots/+/conexion")
+    MQTTC.subscribe("$Planta/robots/+/status")
     MQTTC.loop_start()
 
     # ARRANCAR SERVIDOR
 
     async with server:
-        print("\nServidor OPC-UA activo\n")
-        print("opc.tcp://0.0.0.0:4840/upv/sdrc/\n")
+        print("\nServidor OPC-UA activo")
+        print(f"Endpoint: {OPC_ENDPOINT}\n")
 
         # ÚLTIMOS TARGETS
         last_targets = {"R1": (-1, -1),"R2": (-1, -1),"R3": (-1, -1)}
@@ -160,12 +170,12 @@ async def main():
                     # SOLO SI CAMBIA
                     if actual != last_targets[robot_id]:
                         ignition_override.add(robot_id)
-                        publicar_target(robot_id,x,y)
+                        publicar_target(robot_id, x, y)
                         last_targets[robot_id] = actual
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(0.5)  # Disminuido para mejorar fluidez de lectura
                         ignition_override.discard(robot_id)
                 except Exception as e:
-                    print("Error targets:",e)
+                    print("EError leyendo targets OPC-UA:", e)
 
             # TIMEOUT ROBOTS
             activos = 0
@@ -181,6 +191,5 @@ async def main():
             await asyncio.sleep(0.5)
 
 # MAIN
-
 if __name__ == "__main__":
     asyncio.run(main())

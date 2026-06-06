@@ -22,6 +22,8 @@ ROBOT_SIZE = 10
 TARGET_TOPICS = '$Planta/robots/+/target_pos'
 ACTUAL_TOPICS = '$Planta/robots/+/position'
 
+REDRAW_INTERVAL_MS = 50   # refresco del canvas cada 50 ms (20 fps)
+
 # Aplicación principal
 class RobotSimulatorApp:
     def __init__(self, root):
@@ -45,8 +47,14 @@ class RobotSimulatorApp:
         )
         self.start_button.pack(pady=10)
 
-        # La lista empieza completamente vacía. No se autogenera nada de forma local.
-        self.robots = {}
+        # Estado de los robots: { RobotID: { 'color', 'pos', 'target' } }
+        # Acceso: hilo MQTT escribe, hilo Tkinter lee â€” protegido con lock
+        # La lista empieza completamente vací­a. No se autogenera nada de forma local.
+        self.robots_state = {}  # datos recibidos por MQTT
+        self.robots_state_lock = threading.Lock()
+
+        # Objetos canvas (IDs enteros): solo se leen/escriben desde hilo Tkinter
+        self.robots_canvas = {}  # { RobotID: {'oval': id, 'rect': id, 'color': str} }
 
         # Cliente MQTT
         self.mqtt_client = MQTTC.Client()
@@ -60,10 +68,11 @@ class RobotSimulatorApp:
                 daemon=True
             )
             mqtt_thread.start()
-            print(f"[MQTT] Conectando a {MQBROKER}:{MQPORT}…")
+            print(f"[MQTT] Conectando a {MQBROKER}:{MQPORT}â€¦")
         except Exception as e:
             print(f"[MQTT] No se pudo conectar al broker: {e}")
 
+        self.root.after(REDRAW_INTERVAL_MS, self._update_position_on_canvas)
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     # Callbacks MQTT
@@ -76,52 +85,104 @@ class RobotSimulatorApp:
         else:
             print(f"[MQTT] Error de conexión, código: {rc}")
 
-    def update_position_on_canvas(self,shape,pos,size):
-        self.canvas.coords(
-            shape,  # ID entero del óvalo
-            pos['x'] - size/2,
-            pos['y'] - size/2,
-            pos['x'] + size/2,
-            pos['y'] + size/2
-        )
-
     def _on_mqtt_message(self, client, userdata, msg):
         try:
             topic_parts = msg.topic.split('/')
             #'$Planta/robots/+/target_pos'
+
+            if len(topic_parts) < 4:
+                return
+
+
             data = json.loads(msg.payload.decode())
-            RobotID = topic_parts[2]
+            robot_id = topic_parts[2]
+            subtopic = topic_parts[3]
 
-            if RobotID not in self.robots:
-                ge = "#"
-                de = ("%02x" % random.randint(0, 255))
-                re = ("%02x" % random.randint(0, 255))
-                we = ("%02x" % random.randint(0, 255))
-                color = ge + de + re + we
+            with self.robots_state_lock:
+                if robot_id not in self.robots_state:
+                    color = "#%02x%02x%02x" % (
+                        random.randint(0, 255),
+                        random.randint(0, 255),
+                        random.randint(0, 255),
+                    )
+                    self.robots_state[robot_id] = {
+                        'color': color,
+                        'pos': {'x': data['x'], 'y': data['y']},
+                        'target': {'x': -1, 'y': -1},  # Destino desconocido hasta recibir posicion con heading
+                    }
 
-                size = ROBOT_SIZE
-                target = self.canvas.create_rectangle(data['x'] - size/2, data['y'] - size/2,data['x'] + size/2, data['y'] + size/2, fill=color)
-                robot = self.canvas.create_oval(data['x'] - size/2, data['y'] - size/2,data['x'] + size/2, data['y'] + size/2, fill=color)
-                self.robots[RobotID]={'color':color,'size':size,'robot':robot,'target':target}
-
-            size = self.robots[RobotID]['size']
-            robot = self.robots[RobotID]['robot']
-            target = self.robots[RobotID]['target']
-
-            if topic_parts[3]=='target_pos':
-                #draw OBJ Color self.robots[RobotID]
-                self.update_position_on_canvas(target,data,size)
-            elif topic_parts[3]=='position':
-                #draw POS Color self.robots[RobotID]
-                self.update_position_on_canvas(robot,data,size)
-
+                if subtopic == 'target_pos':
+                    self.robots_state[robot_id]['target'] = {'x': data['x'], 'y': data['y']}
+                elif subtopic == 'position':
+                    self.robots_state[robot_id]['pos'] = {'x': data['x'], 'y': data['y']}
+                    # Extraer destino del campo heading embebido en el mensaje de posicion
+                    heading = data.get('heading')
+                    if isinstance(heading, dict) and 'x' in heading and 'y' in heading:
+                        self.robots_state[robot_id]['target'] = {'x': heading['x'], 'y': heading['y']}
+                    else:
+                        self.robots_state[robot_id]['target'] = {'x': -1, 'y': -1}
 
         except (json.JSONDecodeError, KeyError) as e:
-            print(f"[MQTT] Error al procesar mensaje de {msg.topic}: {e}")
+            print(f"[MQTT] Error al procesar {msg.topic}: {e}")
+
+
+    def _update_position_on_canvas(self):
+
+        with self.robots_state_lock:
+            state_snapshot = {
+                rid: dict(data) for rid, data in self.robots_state.items()
+            }
+
+        size = ROBOT_SIZE
+        h = size / 2
+
+        for robot_id, state in state_snapshot.items():
+            color = state['color']
+            pos = state['pos']
+            target = state['target']
+
+            if robot_id not in self.robots_canvas:
+                # Crear formas la primera vez (estamos en hilo Tkinter, es seguro)
+                rect = self.canvas.create_rectangle(
+                    target['x'] - h, target['y'] - h,
+                    target['x'] + h, target['y'] + h,
+                    outline=color, width=2
+                )
+                oval = self.canvas.create_oval(
+                    pos['x'] - h, pos['y'] - h,
+                    pos['x'] + h, pos['y'] + h,
+                    fill=color
+                )
+                self.robots_canvas[robot_id] = {
+                    'rect': rect,
+                    'oval': oval,
+                    'color': color,
+                }
+                print(f"[HMI] Robot {robot_id} registrado en canvas")
+
+            # Actualizar posición del óvalo (robot real)
+            oval = self.robots_canvas[robot_id]['oval']
+            self.canvas.coords(
+                oval,
+                pos['x'] - h, pos['y'] - h,
+                pos['x'] + h, pos['y'] + h,
+            )
+
+            # Actualizar posición del rectángulo (destino)
+            rect = self.robots_canvas[robot_id]['rect']
+            self.canvas.coords(
+                rect,
+                target['x'] - h, target['y'] - h,
+                target['x'] + h, target['y'] + h,
+            )
+
+        # Reprogramar el siguiente ciclo
+        self.root.after(REDRAW_INTERVAL_MS, self._update_position_on_canvas)
+
 
     def start_simulation(self):
         self.start_button["state"] = "disabled"
-        print("Simulación iniciada de forma pasiva. Esperando altas y bajas desde el servidor MQTT…")
+        print("Simulación iniciada de forma pasiva. Esperando altas y bajas desde el servidor MQTTâ€¦")
 
 
     def on_closing(self):
