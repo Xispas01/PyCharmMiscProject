@@ -23,6 +23,7 @@ ignition_override = set()
 def on_message(client, userdata, msg):
     global robots_nodes
     global targets_count
+
     try:
         topic = msg.topic
         tokens = topic.split("/")
@@ -64,10 +65,13 @@ def on_message(client, userdata, msg):
             )
         # CONEXION
         elif dataName == "conexion":
+            estado = bool(data)
             asyncio.run_coroutine_threadsafe(
-                robot["Connected"].write_value(bool(data)),
+                robot["connected"].write_value(estado),
                 loop
             )
+            #print(f"[OPC] Robot {robot_id} {'conectado' if estado else 'desconectado'}")
+
         # EVENTS
         elif dataName == "event":
             if data["type"] == "arrived":
@@ -86,6 +90,13 @@ def publicar_target(robot_id, x, y):
     data = {"x": x,"y": y}
     mqtt_client_global.publish(topic,json.dumps(data))
     print(f"[OPCUA -> MQTT] {robot_id} target=({x},{y})")
+
+# PUBLICAR COMANDO DE ESTADO MQTT
+def publicar_comando(robot_id, comando):
+    global mqtt_client_global
+    topic = f"$Planta/robots/{robot_id}/command"
+    mqtt_client_global.publish(topic, comando)
+    print(f"[OPCUA -> MQTT] {robot_id} command={comando}")
 
 # MAIN OPC-UA
 async def main():
@@ -123,7 +134,8 @@ async def main():
         await target_y.set_writable()
         # VARIABLES
         robot_battery = await robot_obj.add_variable(idx,"battery",100.0)
-        robot_status = await robot_obj.add_variable(idx,"status","IDLE")
+        robot_status = await robot_obj.add_variable(idx, "status", "IDLE")
+        await robot_status.set_writable()
         robot_connected = await robot_obj.add_variable(idx,"connected",False)
 
         # GUARDAR REFERENCIAS
@@ -151,13 +163,15 @@ async def main():
     MQTTC.loop_start()
 
     # ARRANCAR SERVIDOR
-
     async with server:
         print("\nServidor OPC-UA activo")
         print(f"Endpoint: {OPC_ENDPOINT}\n")
 
         # ÚLTIMOS TARGETS
-        last_targets = {"R1": (-1, -1),"R2": (-1, -1),"R3": (-1, -1)}
+        #Caso de prueba last_targets = {"R1": (50, 50), "R2": (25, 50), "R3": (60, 40)}
+        last_targets = {"R1": (0, 0), "R2": (0, 0), "R3": (0, 0)}
+        last_statuses = {"R1": "IDLE", "R2": "IDLE", "R3": "IDLE"}
+        ultimo_activos = 0
 
         while True:
             # TARGETS DESDE IGNITION
@@ -172,10 +186,31 @@ async def main():
                         ignition_override.add(robot_id)
                         publicar_target(robot_id, x, y)
                         last_targets[robot_id] = actual
-                        await asyncio.sleep(0.5)  # Disminuido para mejorar fluidez de lectura
-                        ignition_override.discard(robot_id)
-                except Exception as e:
-                    print("EError leyendo targets OPC-UA:", e)
+                        await active_robots.write_value(activos)
+                        if activos != ultimo_activos:
+                            print(f"[OPC] Robots activos: {activos}")
+                            ultimo_activos = activos
+                        await asyncio.sleep(0.5)
+                except Exception as elt:
+                    print("Error leyendo targets OPC-UA:", elt)
+
+            # COMMANDS FROM IGNITION (via status variable changes)
+                try:
+                    nuevo_status = await robot["status"].read_value()
+                    if nuevo_status != last_statuses[robot_id]:
+                        prev = last_statuses[robot_id]
+                        if nuevo_status == "HALTED" and prev != "HALTED":
+                            print("Commando usado: STOP\n")
+                            publicar_comando(robot_id, "STOP")
+                        elif nuevo_status in ("IDLE", "MOVING") and prev == "HALTED":
+                            print("Commando usado: RESUME\n")
+                            publicar_comando(robot_id, "RESUME")
+                        elif nuevo_status == "SHUTDOWN" and prev != "SHUTDOWN":
+                            print("Commando usado: SHUTDOWN\n")
+                            publicar_comando(robot_id, "SHUTDOWN")
+                        last_statuses[robot_id] = nuevo_status
+                except Exception as els:
+                    print("Error leyendo status OPC-UA:", els)
 
             # TIMEOUT ROBOTS
             activos = 0

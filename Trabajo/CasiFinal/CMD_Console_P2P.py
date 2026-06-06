@@ -51,8 +51,13 @@ entry_mensaje = None
 
 # Metodos de Utilidades
 def mostrar_mensaje(msg: str):
-    #Añade una línea al área de texto de forma thread-safe.
 
+    # Protección de línea al área de texto thread-safe.
+    if ventana is None:  #la GUI todavía no está lista
+        print(f"[PRE-GUI] {msg}")
+        return
+
+    #Añade una línea al área de texto de forma thread-safe.
     def _insert():
         texto_mensajes.config(state=tk.NORMAL)
         texto_mensajes.insert(tk.END, msg + '\n')
@@ -67,28 +72,30 @@ def actualizar_opciones_desplegable(): #Caso de conexión sin nombre
 
     def _update():
         desplegable_seleccion_conexion['menu'].delete(0, 'end')
-        for opcion in list(dicc_conexiones_establecidas.keys()):
-            etiqueta = dicc_nombres.get(opcion, opcion)
+        hay_robots = any(k != 'None' for k in dicc_conexiones_establecidas)
 
+        # Comprobación de elementos disponibles para mostrar en la lista.
+        for opcion in list(dicc_conexiones_establecidas.keys()):
+            if opcion == 'None' and hay_robots:
+                continue
+            etiqueta = dicc_nombres.get(opcion, opcion)
+            if opcion == 'None':
+                etiqueta = 'SIN CONEXIONES'  # Etiqueta descriptiva cuando no hay robots
             desplegable_seleccion_conexion['menu'].add_command(
                 label=etiqueta,
                 command=tk._setit(opcion_seleccionada, etiqueta)
             )
-    #print('valores inversos: ',mapa_robottcp)
 
     if ventana:
         ventana.after(0, _update)
 
 # Lógica de red TCP
 def hilo_recibir_mensajes(conexion: socket.socket, direccion_puerto: str):
-    #Variables de filtro de mensajes
-    ultimo_msg = None
-    ultimo_remitente = None
-
     # Bucle de recepción continua para una conexión activa.
     while True:
         try:
             datos = conexion.recv(1024)
+            reintentos = 0  # Dato recibido, resetear contador de timeout
             if not datos:
                 mostrar_mensaje(f"Conexión {direccion_puerto} cerrada por el remoto.")
                 break
@@ -153,7 +160,6 @@ def hilo_recibir_mensajes(conexion: socket.socket, direccion_puerto: str):
             msg_str = datos.decode('utf-8', errors='replace')
             remitente = dicc_nombres.get(direccion_puerto, direccion_puerto)
             mostrar_mensaje(f"Mensaje de {remitente}: {msg_str}")
-
         except socket.error:
             mostrar_mensaje(f"Error en conexión {direccion_puerto}. Conexión cerrada.")
             break
@@ -275,7 +281,7 @@ def enviar_mensaje(event=None):  # event=None permite que sea llamado tanto por 
 
                 if r_id:
                     payload = json.dumps({"x": x, "y": y, "ts": time.time(), "source": "console"})
-                    MQTTC.publish(f"$Planta/robots/{r_id}/target_pos", payload, qos=1, retain=True)
+                    MQTTC.publish(f"$Planta/robots/{r_id}/target_pos", payload, qos=1)
             except ValueError:
                 pass
 
@@ -306,9 +312,13 @@ def cerrar_conexion():
 def on_mqtt_coordinador(client, userdata, msg):
     try:
         topic_parts = msg.topic.split('/')
+        if len(topic_parts) < 4:
+            return
+        r_id = topic_parts[2]
+        subtopic = topic_parts[3]
+
         # topic: $Planta/robots/R1/target_pos
-        if len(topic_parts) >= 4 and topic_parts[3] == 'target_pos':
-            r_id = topic_parts[2]
+        if subtopic == 'target_pos':
             data = json.loads(msg.payload.decode())
             # Ignorar targets originados en esta misma consola (ya enviados directamente por TCP)
             if data.get('source') == 'console':
@@ -321,9 +331,24 @@ def on_mqtt_coordinador(client, userdata, msg):
                 conn = dicc_conexiones_establecidas.get(dir_puerto)
                 if conn:
                     comand = f"SET_TARGET {x} {y}\n"
-                    conn.sendall(comand.encode('utf-8')) #Garantizar que no haya errores de codificación luego en pickel
+                    conn.sendall(comand.encode('utf-8'))
                     mostrar_mensaje(f"[OPC] Ignition ordenó mover a {r_id}. Comando enviado.")
+
+        # topic: $Planta/robots/R1/command — comandos de estado desde OPC-UA
+        elif subtopic == 'command':
+            comando = msg.payload.decode().strip()
+            dir_puerto = mapa_robottcp.get(r_id)
+            if dir_puerto:
+                conn = dicc_conexiones_establecidas.get(dir_puerto)
+                if conn:
+                    try:
+                        conn.sendall(f"{comando}\n".encode('utf-8'))
+                        mostrar_mensaje(f"[OPC] Ignition envió {comando} a {r_id}. Comando enviado.")
+                    except socket.error:
+                        mostrar_mensaje(f"[OPC] Robot {r_id} no responde al enviar {comando}. Posible nodo caído.")
+
     except Exception as e:
+        print("Error:",e)
         pass
 
 def hilo_UDP():
@@ -342,7 +367,7 @@ def hilo_UDP():
             if WatchList[Robot]['status'] != 'OFFLINE' and WatchList[Robot]['ts'] < hora_actual - MARGEN:
                 print(f"[UDP] Robot {Robot}: Inactivo")
                 WatchList[Robot]['status'] = 'OFFLINE'
-                MQTTC.publish(f"$Planta/robots/{Robot}/conexion", "false") # Corrección a JSON nativo
+                MQTTC.publish(f"$Planta/robots/{Robot}/conexion", "false", retain=True) # Corrección a JSON nativo
 
         try:
             # Recibir los datos a través del socket
@@ -351,7 +376,7 @@ def hilo_UDP():
             data_deserialized = pickle.loads(data)
             # Imprimir los datos deserializados
             print("[UDP] ", data_deserialized)
-            MQTTC.publish(f"$Planta/robots/{data_deserialized["robot_id"]}/conexion", f"{True}")
+            MQTTC.publish(f"$Planta/robots/{data_deserialized["robot_id"]}/conexion", "true")
             WatchList[data_deserialized["robot_id"]] = data_deserialized
 
         except socket.timeout:
@@ -368,8 +393,6 @@ def hilo_UDP():
 def main():
     global ventana, texto_mensajes, opcion_seleccionada, desplegable_seleccion_conexion
     global entry_puerto_servidor, entry_ip_destino, entry_puerto_destino, entry_mensaje
-
-    iniciar_servidor()
 
     ventana = tk.Tk()
     ventana.title("Servidor TCP Maestro ReSiDiCo")
@@ -410,6 +433,7 @@ def main():
     #tk.Button(ventana, text="Cerrar conexión", font=font_btn, width=16, command=cerrar_conexion).grid(row=16, column=0,  columnspan=3, pady=(0, 8))
 
     actualizar_opciones_desplegable()
+    iniciar_servidor()
     ventana.mainloop()
 
 if __name__ == '__main__':
@@ -420,6 +444,7 @@ if __name__ == '__main__':
 
     # Requisito: El coordinador debe escuchar targets para mandarlos por TCP
     MQTTC.subscribe("$Planta/robots/+/target_pos")
+    MQTTC.subscribe("$Planta/robots/+/command")
     MQTTC.loop_start()
 
     tTCP = threading.Thread(name='TCPComands', target=main, args=())
