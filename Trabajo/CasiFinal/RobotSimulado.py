@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 from json import JSONEncoder
+from sys import exception
 from tabnanny import verbose
 
 from time import sleep
@@ -53,7 +54,7 @@ class Robot:
         self.Event = "Start"
         self.Battery = 100.0
 
-        self.EventTopic = {"type": "ideling", "ts": time.time()}
+        self.CurrentEventState = {"type": "ideling", "ts": time.time()}
         self.ActiveState = True
         self.Status = 'IDLE'
         self.Halted = False
@@ -135,6 +136,7 @@ class Robot:
                     print(f"SHUTDOWN {Command}\n")
                 self.TCPSocket.send("ACK".encode())
                 self.ActiveState = False
+                self.Status = 'IDLE'
                 break
             else:
                 self.TCPSocket.send(f"Comando \"{Command}\" desconocido\n".encode())
@@ -169,7 +171,7 @@ class Robot:
             self.Status = 'HALTED'
         if self.Battery < 10.0:
             hora_actual = time.time()
-            self.MQTTClient.publish(str(self.EventTopic),f"{json.dumps({'type':'low_bat','ts':hora_actual})}",qos=1,retain=True)
+            self.MQTTClient.publish(self.EventTopic,f"{json.dumps({'type':'low_bat','ts':hora_actual})}",qos=1,retain=True)
 
 
 
@@ -193,13 +195,21 @@ class Robot:
                     self.Status = 'IDLE'
                     hora_actual = time.time()
                     self.MQTTClient.publish(self.EventTopic, f"{json.dumps({'type': 'arrived', 'ts': hora_actual})}",qos=1, retain=True)
+
                 time.sleep(SimTimeStep)
 
 
     def start(self):
-        print(f"{self.RobotID} Arrancando\n")
-        self.MQTTClient.connect(self.MQTTBroker,self.MQTTBrokerPort)
-        self.TCPSocket.connect(self.TCPServer)
+        try:
+            print(f"{self.RobotID} Arrancando\n")
+            self.MQTTClient.connect(self.MQTTBroker,self.MQTTBrokerPort)
+            self.TCPSocket.connect(self.TCPServer)
+        except ConnectionRefusedError as cre: #Error si python detecta la conexión ocupada
+            print("Error: ",cre,"\nPosiblemente otra conexión siga activa.")
+            exit(-1)
+        except Exception as e: #Error general
+            print("Error: ", e)
+            exit(-1)
 
         HiloMQTTHB = threading.Thread(name='MQTTHB', target=self.MQTTHeartBeat, args=())
         HiloUDPHB = threading.Thread(name='UDPHB', target=self.UDPHeartBeat, args=())

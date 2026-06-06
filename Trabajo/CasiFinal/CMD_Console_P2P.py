@@ -407,9 +407,7 @@ def main():
     tk.Button(ventana, text="Enviar mensaje", font=font_btn, width=16, command=enviar_mensaje).grid(row=15, column=0,
                                                                                                     columnspan=3,
                                                                                                     pady=4)
-    tk.Button(ventana, text="Cerrar conexión", font=font_btn, width=16, command=cerrar_conexion).grid(row=16, column=0,
-                                                                                                      columnspan=3,
-                                                                                                      pady=(0, 8))
+    #tk.Button(ventana, text="Cerrar conexión", font=font_btn, width=16, command=cerrar_conexion).grid(row=16, column=0,  columnspan=3, pady=(0, 8))
 
     actualizar_opciones_desplegable()
     ventana.mainloop()
