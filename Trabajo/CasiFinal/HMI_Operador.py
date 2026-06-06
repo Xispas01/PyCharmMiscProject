@@ -21,6 +21,7 @@ ROBOT_SIZE = 10
 # Se gestiona de manera totalmente dinámica leyendo del servidor MQTT
 TARGET_TOPICS = '$Planta/robots/+/target_pos'
 ACTUAL_TOPICS = '$Planta/robots/+/position'
+ACTUAL_CONECTION = '$Planta/robots/+/conexion'
 
 REDRAW_INTERVAL_MS = 50   # refresco del canvas cada 50 ms (20 fps)
 
@@ -48,8 +49,8 @@ class RobotSimulatorApp:
         self.start_button.pack(pady=10)
 
         # Estado de los robots: { RobotID: { 'color', 'pos', 'target' } }
-        # Acceso: hilo MQTT escribe, hilo Tkinter lee â€” protegido con lock
-        # La lista empieza completamente vací­a. No se autogenera nada de forma local.
+        # Acceso: hilo MQTT escribe, hilo Tkinter lee "” protegido con lock
+        # La lista empieza completamente vacía. No se autogenera nada de forma local.
         self.robots_state = {}  # datos recibidos por MQTT
         self.robots_state_lock = threading.Lock()
 
@@ -68,7 +69,7 @@ class RobotSimulatorApp:
                 daemon=True
             )
             mqtt_thread.start()
-            print(f"[MQTT] Conectando a {MQBROKER}:{MQPORT}â€¦")
+            print(f"[MQTT] Conectando a {MQBROKER}:{MQPORT} ")
         except Exception as e:
             print(f"[MQTT] No se pudo conectar al broker: {e}")
 
@@ -82,6 +83,7 @@ class RobotSimulatorApp:
             # Escucha global de cualquier instanciación u objetivo de robot
             client.subscribe(TARGET_TOPICS)
             client.subscribe(ACTUAL_TOPICS)
+            client.subscribe(ACTUAL_CONECTION)
         else:
             print(f"[MQTT] Error de conexión, código: {rc}")
 
@@ -93,13 +95,27 @@ class RobotSimulatorApp:
             if len(topic_parts) < 4:
                 return
 
-
-            data = json.loads(msg.payload.decode())
             robot_id = topic_parts[2]
             subtopic = topic_parts[3]
 
+            # Desconexion del robot: purgar estado y canvas de forma inmediata
+            if subtopic == 'conexion':
+                if msg.payload.decode().strip().lower() == 'false':
+                    with self.robots_state_lock:
+                        if robot_id in self.robots_state:
+                            print("[HMI] Robot",robot_id[1], "Desconectado")
+                            del self.robots_state[robot_id]
+                    self.root.after(0, lambda rid=robot_id: self._eliminar_robot_canvas(rid))
+                return  # Siempre "true" ignora / "false" ya fue procesado
+
+            data = json.loads(msg.payload.decode())
+
+            #Dibujar robots si existen
             with self.robots_state_lock:
                 if robot_id not in self.robots_state:
+                    if subtopic != 'position':  # Solo dar de alta desde posicion activa del robot
+                        return
+
                     color = "#%02x%02x%02x" % (
                         random.randint(0, 255),
                         random.randint(0, 255),
@@ -125,9 +141,8 @@ class RobotSimulatorApp:
         except (json.JSONDecodeError, KeyError) as e:
             print(f"[MQTT] Error al procesar {msg.topic}: {e}")
 
-
     def _update_position_on_canvas(self):
-
+    #Acualización de las posicones en el canvas redibujando
         with self.robots_state_lock:
             state_snapshot = {
                 rid: dict(data) for rid, data in self.robots_state.items()
@@ -179,10 +194,17 @@ class RobotSimulatorApp:
         # Reprogramar el siguiente ciclo
         self.root.after(REDRAW_INTERVAL_MS, self._update_position_on_canvas)
 
+    def _eliminar_robot_canvas(self, robot_id):
+        # Borra las formas geometricas del robot del canvas y limpia su entrada.
+        if robot_id in self.robots_canvas:
+            self.canvas.delete(self.robots_canvas[robot_id]['oval'])
+            self.canvas.delete(self.robots_canvas[robot_id]['rect'])
+            del self.robots_canvas[robot_id]
+            print(f"[HMI] Robot {robot_id} eliminado del canvas")
 
     def start_simulation(self):
         self.start_button["state"] = "disabled"
-        print("Simulación iniciada de forma pasiva. Esperando altas y bajas desde el servidor MQTTâ€¦")
+        print("Simulación iniciada de forma pasiva.")
 
 
     def on_closing(self):

@@ -78,7 +78,7 @@ class Robot:
 
 
     def UDPHeartBeat(self):
-        while self.ActiveState:
+        while self.ActiveState and self.Status != 'SHUTDOWN':
             sleep(0.5)
             if ControlPrints:
                 print(f"{self.RobotID} sending UDP HB")
@@ -90,7 +90,7 @@ class Robot:
         self.UDPSocket.close()
 
     def TCPComandCenter(self):
-        while self.ActiveState:
+        while self.ActiveState and self.Status != 'SHUTDOWN':
             # Recibir datos
             Command = self.TCPSocket.recv(1024).decode()
             if Command.startswith('SET_TARGET'):
@@ -122,6 +122,7 @@ class Robot:
                     self.TCPSocket.send(f"{self.Position}".encode())
                     self.Halted = True
                     self.Status = 'HALTED'
+                    print("[TCP] ", Command)
             elif Command.startswith('RESUME'):
                     if ControlPrints:
                         print(f"RESUME {Command}\n")
@@ -156,6 +157,7 @@ class Robot:
                     hora_actual = time.time()
                     self.MQTTClient.publish(self.StateTopic, "SHUTDOWN", qos=1, retain=True)
                     self.MQTTClient.publish(f"$Planta/robots/{self.RobotID}/conexion", "false", qos=1, retain=True)
+                    print("[TCP] ",Command)
                     break
             else:
                 self.TCPSocket.send(f"Comando \"{Command}\" desconocido\n".encode())
@@ -195,7 +197,7 @@ class Robot:
 
 
     def Simulation(self):
-        while self.ActiveState:
+        while self.ActiveState and self.Status != 'SHUTDOWN':
             time.sleep(SimTimeStep)
             self.BatteryChange(BATTERY_REGEN_RATE)
             while not self.Halted and self.HasTarget and not self.CheckTarget() and self.Battery + BATTERY_CONSUMPTION_RATE > 0.0:
