@@ -63,7 +63,7 @@ class Robot:
         self.TargetPosition = None
 
     def MQTTHeartBeat(self):
-        while self.ActiveState:
+        while self.ActiveState and self.Status != 'SHUTDOWN':
             sleep(0.2)
             if ControlPrints:
                 print(f"{self.RobotID} sending MQTT HB")
@@ -115,16 +115,28 @@ class Robot:
             elif Command.startswith('STOP'):
                 if ControlPrints:
                     print(f"STOP {Command}\n")
-                self.TCPSocket.send("ACK".encode())
-                self.TCPSocket.send(f"{self.Position}".encode())
-                self.Halted = True
-                self.Status = 'HALTED'
+                if self.Halted:  # Ya en HALTED
+                    self.TCPSocket.send("NACK ya parado.".encode())
+                else:
+                    self.TCPSocket.send("ACK".encode())
+                    self.TCPSocket.send(f"{self.Position}".encode())
+                    self.Halted = True
+                    self.Status = 'HALTED'
             elif Command.startswith('RESUME'):
-                if ControlPrints:
-                    print(f"RESUME {Command}\n")
-                self.TCPSocket.send("ACK".encode())
-                self.Halted = False
-                self.Status = 'IDLE'
+                    if ControlPrints:
+                        print(f"RESUME {Command}\n")
+                    if not self.Halted:  # Reanudar solo desde HALTED
+                        self.TCPSocket.send("NACK NO PARADO".encode())
+                    elif not self.HasTarget or self.CheckTarget():  # IDLE: Sin objetivo pendiente
+                        self.TCPSocket.send("ACK".encode())
+                        self.Halted = False
+                        self.Status = 'IDLE'
+                    elif self.HasTarget and self.Battery > 10.0:  # MOVING: objetivo + batería suficiente
+                        self.TCPSocket.send("ACK".encode())
+                        self.Halted = False
+                        self.Status = 'MOVING'
+                    else:  # Bateria insuficiente para reanudar movimiento
+                        self.TCPSocket.send("NACK Batería Insuficiente".encode())
             elif Command.startswith('GET_STATUS'):
                 if ControlPrints:
                     print(f"GET_STATUS {Command}\n")
@@ -134,10 +146,17 @@ class Robot:
             elif Command.startswith('SHUTDOWN'):
                 if ControlPrints:
                     print(f"SHUTDOWN {Command}\n")
-                self.TCPSocket.send("ACK".encode())
-                self.ActiveState = False
-                self.Status = 'IDLE'
-                break
+                if not self.ActiveState or self.Status == 'SHUTDOWN':  # Guarda: ya apagado
+                    self.TCPSocket.send("NACK".encode())
+                else:
+                    self.TCPSocket.send("ACK".encode())
+                    self.Status = 'SHUTDOWN'
+                    self.ActiveState = False
+                    # Notificar a todos del apagado antes de cerrar sockets
+                    hora_actual = time.time()
+                    self.MQTTClient.publish(self.StateTopic, "SHUTDOWN", qos=1, retain=True)
+                    self.MQTTClient.publish(f"$Planta/robots/{self.RobotID}/conexion", "false", qos=1, retain=True)
+                    break
             else:
                 self.TCPSocket.send(f"Comando \"{Command}\" desconocido\n".encode())
                 if ControlPrints:

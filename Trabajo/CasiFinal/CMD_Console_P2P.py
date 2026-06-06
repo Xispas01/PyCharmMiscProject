@@ -51,7 +51,7 @@ entry_mensaje = None
 
 # Metodos de Utilidades
 def mostrar_mensaje(msg: str):
-    #Añade una lí­nea al área de texto de forma thread-safe.
+    #Añade una línea al área de texto de forma thread-safe.
 
     def _insert():
         texto_mensajes.config(state=tk.NORMAL)
@@ -115,7 +115,7 @@ def hilo_recibir_mensajes(conexion: socket.socket, direccion_puerto: str):
                 except Exception:
                     pass
 
-            # Capa C: Escaneo heurí­stico en Texto Plano (busca R1, R2, R3 en el mensaje)
+            # Capa C: Escaneo heurístico en Texto Plano (busca R1, R2, R3 en el mensaje)
             if not r_id:
                 try:
                     msg_str = datos.decode('utf-8', errors='ignore')
@@ -230,7 +230,7 @@ def conectar(): #Funcion conservada para conectar manualmente si se requiere.
     try:
         conexion.connect((ip, puerto))
         dicc_conexiones_establecidas[dir_puerto] = conexion
-        dicc_nombres[dir_puerto] = dir_puerto #<--Aquí­ es donde hay que establecer el nombre amigable
+        dicc_nombres[dir_puerto] = dir_puerto
 
         actualizar_opciones_desplegable()
         t = threading.Thread(target=hilo_recibir_mensajes, args=(conexion, dir_puerto), daemon=True)
@@ -259,7 +259,7 @@ def enviar_mensaje(event=None):  # event=None permite que sea llamado tanto por 
     if not mensaje.strip() or not conexion:
         return
 
-    # Si se enví­a el target desde GUI, replicarlo en MQTT
+    # Si se envía el target desde GUI, replicarlo en MQTT
     if mensaje.startswith('SET_TARGET'):
         data = mensaje.split(' ')
         if len(data) >= 3:
@@ -315,7 +315,7 @@ def on_mqtt_coordinador(client, userdata, msg):
                 return
             x, y = data.get('x'), data.get('y')
 
-            # Redirigir el target por la conexión TCP especí­fica del Robot
+            # Redirigir el target por la conexión TCP específica del Robot
             dir_puerto = mapa_robottcp.get(r_id)
             if dir_puerto:
                 conn = dicc_conexiones_establecidas.get(dir_puerto)
